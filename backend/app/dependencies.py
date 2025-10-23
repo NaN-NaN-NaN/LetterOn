@@ -45,7 +45,7 @@ def get_current_user_id(
             return {"user_id": user_id}
     """
     token = credentials.credentials
-
+    print("HAHAHAHA",credentials )
     user_id = verify_token(token)
 
     if not user_id:

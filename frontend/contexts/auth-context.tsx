@@ -7,8 +7,9 @@
  * Automatically checks for existing token on mount.
  */
 
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { api, TokenManager } from '@/lib/api';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { api, TokenManager, setUnauthorizedHandler } from '@/lib/api';
+import { TokenStorage } from '@/lib/token-storage';
 import { useToast } from '@/hooks/use-toast';
 
 interface User {
@@ -29,10 +30,61 @@ interface AuthContextType {
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
-export function AuthProvider({ children }: { children: React.ReactNode }) {
+export function AuthProvider({ children }: { children: React.ReactNode}) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const { toast } = useToast();
+  const expiryCheckInterval = useRef<NodeJS.Timeout | null>(null);
+
+  // Handle automatic logout on 401
+  useEffect(() => {
+    setUnauthorizedHandler(() => {
+      setUser(null);
+      toast({
+        title: "Session Expired",
+        description: "Your session has expired. Please login again.",
+        variant: "destructive",
+      });
+    });
+  }, [toast]);
+
+  // Check token expiration every minute
+  useEffect(() => {
+    const checkTokenExpiry = () => {
+      if (!TokenStorage.hasValidToken()) {
+        // Token expired or invalid
+        if (user) {
+          setUser(null);
+          toast({
+            title: "Session Expired",
+            description: "Your session has expired. Please login again.",
+            variant: "destructive",
+          });
+        }
+        return;
+      }
+
+      // Warn if token expires soon (within 1 hour)
+      if (TokenStorage.isTokenExpiringSoon()) {
+        toast({
+          title: "Session Expiring Soon",
+          description: "Your session will expire soon. Please save your work.",
+        });
+      }
+    };
+
+    // Check immediately
+    checkTokenExpiry();
+
+    // Then check every minute
+    expiryCheckInterval.current = setInterval(checkTokenExpiry, 60 * 1000);
+
+    return () => {
+      if (expiryCheckInterval.current) {
+        clearInterval(expiryCheckInterval.current);
+      }
+    };
+  }, [user, toast]);
 
   // Check for existing session on mount
   useEffect(() => {

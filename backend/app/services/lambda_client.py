@@ -135,9 +135,9 @@ class LambdaClient:
         """
         payload = {
             "bucket": settings.s3_bucket_name,
-            "keys": s3_keys
+            "s3_keys": s3_keys
         }
-
+        print("=====@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@",payload)
         logger.info(f"Invoking OCR Lambda for {len(s3_keys)} images")
         result = self.invoke_lambda(
             function_name=settings.lambda_ocr_function_name,
@@ -149,7 +149,7 @@ class LambdaClient:
 
     def invoke_llm_lambda(
         self,
-        input_text: str,
+        text: str,
         prompt_template: str,
         conversation_history: Optional[list] = None,
         temperature: float = 0.7,
@@ -192,7 +192,7 @@ class LambdaClient:
             )
         """
         payload = {
-            "input_text": input_text,
+            "text": text,
             "prompt_template": prompt_template,
             "temperature": temperature,
             "max_tokens": max_tokens
@@ -202,6 +202,7 @@ class LambdaClient:
             payload["conversation_history"] = conversation_history
 
         logger.info(f"Invoking LLM Lambda (temperature: {temperature})")
+        print("**********************************",payload)
         result = self.invoke_lambda(
             function_name=settings.lambda_llm_function_name,
             payload=payload,

@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     lambda_ocr_function_name: str = "LetterOnOCRHandler"
     lambda_llm_function_name: str = "LetterOnLLMHandler"
 
+    # DynamoDB Configuration
+    dynamodb_endpoint: str = ""  # For local development (e.g., http://localhost:8002)
+
     # DynamoDB Tables
     dynamodb_users_table: str = "LetterOn-Users"
     dynamodb_letters_table: str = "LetterOn-Letters"
@@ -54,7 +57,7 @@ class Settings(BaseSettings):
     dynamodb_conversations_table: str = "LetterOn-Conversations"
 
     # CORS Settings
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = "http://localhost:3000,http://localhost:3001,http://localhost:5173"
 
     # File Upload Settings
     max_upload_size_mb: int = 1  # Max size per file in MB

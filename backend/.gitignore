@@ -57,6 +57,9 @@ Thumbs.db
 # Docker
 *.tar
 
+# DynamoDB Local data
+dynamodb-data/
+
 # Temporary files
 tmp/
 temp/

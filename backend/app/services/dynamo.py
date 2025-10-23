@@ -36,6 +36,12 @@ class DynamoDBClient:
     def __init__(self):
         """Initialize boto3 DynamoDB resource with configured credentials."""
         aws_config = settings.get_aws_credentials()
+
+        # Add endpoint URL for local development
+        if settings.dynamodb_endpoint:
+            aws_config['endpoint_url'] = settings.dynamodb_endpoint
+            logger.info(f"Using DynamoDB endpoint: {settings.dynamodb_endpoint}")
+
         self.dynamodb = boto3.resource('dynamodb', **aws_config)
 
         # Table references

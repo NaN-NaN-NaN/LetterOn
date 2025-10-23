@@ -1,0 +1,30 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(chmod +x /Users/nan/Project/LetterOn/letteron-server/deploy_aws.sh)",
+      "Bash(npm install)",
+      "Bash(npm run dev)",
+      "Bash(uv sync)",
+      "Bash(uv run python -c \"import fastapi; print(f''FastAPI version: {fastapi.__version__}'')\")",
+      "Bash(uv run pytest tests/test_auth.py -v --tb=short)",
+      "Bash(cat:*)",
+      "Bash(uv run python:*)",
+      "Bash(lsof:*)",
+      "Bash(curl:*)",
+      "Bash(git add frontend/lib/api.ts frontend/contexts/ frontend/BACKEND_INTEGRATION.md frontend/app/layout.tsx frontend/components/auth-page.tsx frontend/package.json frontend/package-lock.json)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(rm:*)",
+      "Bash(chmod:*)",
+      "Bash(./start_local_dynamodb.sh:*)",
+      "Bash(brew list:*)",
+      "Bash(pip3 install:*)",
+      "Bash(java -version:*)",
+      "Bash(pip3 show:*)",
+      "Bash(python3:*)",
+      "Bash(tree:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

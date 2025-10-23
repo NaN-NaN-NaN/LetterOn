@@ -26,10 +26,12 @@ services:
       retries: 3
       start_period: 10s
 
-  # Optional: Add DynamoDB Local for testing
-  # dynamodb-local:
-  #   image: amazon/dynamodb-local:latest
-  #   ports:
-  #     - "8001:8000"
-  #   command: "-jar DynamoDBLocal.jar -sharedDb -inMemory"
-  #   restart: unless-stopped
+  # DynamoDB Local for development
+  dynamodb-local:
+    image: amazon/dynamodb-local:latest
+    ports:
+      - "8002:8000"
+    command: "-jar DynamoDBLocal.jar -sharedDb"
+    restart: unless-stopped
+    volumes:
+      - ./dynamodb-data:/home/dynamodblocal/data

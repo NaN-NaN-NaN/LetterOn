@@ -13,28 +13,26 @@
 const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000';
 
 /**
- * Token management utilities
+ * Token management utilities (using secure storage)
  */
+import { TokenStorage } from './token-storage';
+
 export const TokenManager = {
-  getToken(): string | null {
-    if (typeof window === 'undefined') return null;
-    return localStorage.getItem('letteron_token');
-  },
-
-  setToken(token: string): void {
-    if (typeof window === 'undefined') return;
-    localStorage.setItem('letteron_token', token);
-  },
-
-  removeToken(): void {
-    if (typeof window === 'undefined') return;
-    localStorage.removeItem('letteron_token');
-  },
-
-  hasToken(): boolean {
-    return !!this.getToken();
-  }
+  getToken: () => TokenStorage.getToken(),
+  setToken: (token: string, rememberMe?: boolean) => TokenStorage.setToken(token, rememberMe),
+  removeToken: () => TokenStorage.removeToken(),
+  hasToken: () => TokenStorage.hasValidToken(),
 };
+
+/**
+ * Callback for 401 errors (token expired/invalid)
+ * Set this in your auth context to handle automatic logout
+ */
+let onUnauthorized: (() => void) | null = null;
+
+export function setUnauthorizedHandler(handler: () => void) {
+  onUnauthorized = handler;
+}
 
 /**
  * Base API request function with error handling
@@ -49,7 +47,7 @@ async function apiRequest<T>(
     ...options.headers,
   };
 
-  // Add auth token if available
+  // Add auth token if available (and not expired)
   if (token) {
     headers['Authorization'] = `Bearer ${token}`;
   }
@@ -65,7 +63,20 @@ async function apiRequest<T>(
       headers,
     });
 
-    // Handle non-OK responses
+    // Handle 401 Unauthorized - token expired or invalid
+    if (response.status === 401) {
+      console.warn('[API] 401 Unauthorized - Token invalid or expired');
+      TokenManager.removeToken();
+
+      // Trigger logout handler if set
+      if (onUnauthorized) {
+        onUnauthorized();
+      }
+
+      throw new Error('Session expired. Please login again.');
+    }
+
+    // Handle other non-OK responses
     if (!response.ok) {
       const error = await response.json().catch(() => ({
         error: 'Request failed',

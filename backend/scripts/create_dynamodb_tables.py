@@ -29,6 +29,12 @@ def create_tables():
 
     # Initialize DynamoDB client
     aws_config = settings.get_aws_credentials()
+
+    # Add endpoint URL for local development
+    if settings.dynamodb_endpoint:
+        aws_config['endpoint_url'] = settings.dynamodb_endpoint
+        print(f"Using DynamoDB endpoint: {settings.dynamodb_endpoint}")
+
     dynamodb = boto3.client('dynamodb', **aws_config)
 
     print("Creating DynamoDB tables...")
@@ -54,8 +60,7 @@ def create_tables():
                     'KeySchema': [
                         {'AttributeName': 'email', 'KeyType': 'HASH'}
                     ],
-                    'Projection': {'ProjectionType': 'ALL'},
-                    'BillingMode': 'PAY_PER_REQUEST'
+                    'Projection': {'ProjectionType': 'ALL'}
                 }
             ],
             BillingMode='PAY_PER_REQUEST',
@@ -92,8 +97,7 @@ def create_tables():
                         {'AttributeName': 'user_id', 'KeyType': 'HASH'},
                         {'AttributeName': 'record_created_at', 'KeyType': 'RANGE'}
                     ],
-                    'Projection': {'ProjectionType': 'ALL'},
-                    'BillingMode': 'PAY_PER_REQUEST'
+                    'Projection': {'ProjectionType': 'ALL'}
                 }
             ],
             BillingMode='PAY_PER_REQUEST',
@@ -128,8 +132,7 @@ def create_tables():
                     'KeySchema': [
                         {'AttributeName': 'user_id', 'KeyType': 'HASH'}
                     ],
-                    'Projection': {'ProjectionType': 'ALL'},
-                    'BillingMode': 'PAY_PER_REQUEST'
+                    'Projection': {'ProjectionType': 'ALL'}
                 }
             ],
             BillingMode='PAY_PER_REQUEST',
@@ -166,8 +169,7 @@ def create_tables():
                         {'AttributeName': 'letter_id', 'KeyType': 'HASH'},
                         {'AttributeName': 'timestamp', 'KeyType': 'RANGE'}
                     ],
-                    'Projection': {'ProjectionType': 'ALL'},
-                    'BillingMode': 'PAY_PER_REQUEST'
+                    'Projection': {'ProjectionType': 'ALL'}
                 }
             ],
             BillingMode='PAY_PER_REQUEST',

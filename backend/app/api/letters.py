@@ -145,10 +145,12 @@ async def process_images(
     # Generate letter ID
     letter_id = generate_uuid()
 
+
     try:
         # Step 1: Upload images to S3
         s3_keys = []
         image_urls = []
+
 
         for file in files:
             # Validate file size
@@ -165,7 +167,7 @@ async def process_images(
                     status_code=status.HTTP_400_BAD_REQUEST,
                     detail=f"File type {file.content_type} not allowed"
                 )
-
+    
             # Upload to S3
             upload_result = s3_client.upload_letter_image(
                 file_content=content,
@@ -181,25 +183,43 @@ async def process_images(
 
         # Step 2: Call OCR Lambda
         logger.info(f"Calling OCR Lambda for letter {letter_id}")
-        ocr_result = lambda_client.invoke_ocr_lambda(s3_keys)
+        response = lambda_client.invoke_ocr_lambda(s3_keys)
+        ocr_result = json.loads(   response.get("body"))['ocr_results']
+
+        # Extract OCR text from all objects in the array
+        ocr_texts = []
+        if isinstance(ocr_result, list):
+            for item in ocr_result:
+                if isinstance(item, dict) and "text" in item:
+                    text = item.get("text", "").strip()
+                if text:  # Only add non-empty text
+                    ocr_texts.append(text)
+        elif isinstance(ocr_result, dict) and "text" in ocr_result:
+        # Handle case where it's a single object instead of array
+            text = ocr_result.get("text", "").strip()
+            if text:
+                ocr_texts.append(text)
+
+        # Concatenate all texts with semicolon separator
+        ocr_text = "; ".join(ocr_texts)
 
         # Extract OCR text
-        ocr_text = ocr_result.get("text", "")
+     
         logger.info(f"OCR completed, extracted {len(ocr_text)} characters")
 
         # Step 3: Call LLM Lambda for analysis
         logger.info(f"Calling LLM Lambda for letter analysis")
         analysis_prompt = load_prompt_template("analyze_prompt.txt")
-
+        print("hahahahaa",s3_keys, ocr_text)
         # Replace placeholders in prompt
         analysis_prompt_filled = analysis_prompt.replace("{{OCR_TEXT}}", ocr_text)
-
+        
         llm_result = lambda_client.invoke_llm_lambda(
-            input_text=ocr_text,
+            text=ocr_text,
             prompt_template=analysis_prompt_filled,
             temperature=0.5  # Lower temperature for more consistent structured output
         )
-
+        print("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!",llm_result)
         # Parse LLM response (expected to be JSON)
         try:
             analysis_data = json.loads(llm_result.get("response", "{}"))

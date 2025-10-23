@@ -15,6 +15,8 @@ import type { Email, LetterCategory, ActionStatus } from "@/types/email"
 import { Badge } from "@/components/ui/badge"
 import { getCategoryDisplay } from "@/lib/letter-categories"
 import { Checkbox } from "@/components/ui/checkbox"
+import { TokenStorage } from "@/lib/token-storage"
+
 
 interface UploadLettersProps {
   onClose: () => void
@@ -26,7 +28,8 @@ interface LetterImage {
   preview: string
 }
 
-interface LLMResult {
+interface ImageProcessResponse {
+  letter_id: string
   subject: string
   sender: string
   content: string
@@ -35,13 +38,14 @@ interface LLMResult {
   hasReminder: boolean
   actionDueDate?: string
   aiSuggestion: string
+  originalImages: string[]
 }
 
 export default function UploadLetters({ onClose, onCreateLetter }: UploadLettersProps) {
   const [images, setImages] = useState<LetterImage[]>([])
   const [uploading, setUploading] = useState(false)
   const [previewModalOpen, setPreviewModalOpen] = useState(false)
-  const [llmResult, setLLMResult] = useState<LLMResult | null>(null)
+  const [apiResponse, setApiResponse] = useState<ImageProcessResponse | null>(null)
   const [includeTranslation, setIncludeTranslation] = useState(false)
   const [translationLanguage, setTranslationLanguage] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -49,6 +53,7 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
 
   const MAX_IMAGES = 3
   const MAX_FILE_SIZE = 1024 * 1024 // 1MB in bytes
+  const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000"
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files) {
@@ -56,18 +61,30 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
 
       const validFiles = newFiles.filter((file) => {
         if (file.size > MAX_FILE_SIZE) {
-          alert(`${file.name} exceeds 1MB limit`)
+          toast({
+            title: "File Too Large",
+            description: `${file.name} exceeds 1MB limit`,
+            variant: "destructive",
+          })
           return false
         }
         if (!file.type.startsWith("image/")) {
-          alert(`${file.name} is not an image`)
+          toast({
+            title: "Invalid File Type",
+            description: `${file.name} is not an image`,
+            variant: "destructive",
+          })
           return false
         }
         return true
       })
 
       if (images.length + validFiles.length > MAX_IMAGES) {
-        alert(`You can only upload up to ${MAX_IMAGES} images`)
+        toast({
+          title: "Too Many Images",
+          description: `You can only upload up to ${MAX_IMAGES} images`,
+          variant: "destructive",
+        })
         return
       }
 
@@ -92,40 +109,71 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
 
     setUploading(true)
 
-    // Simulate API call to LLM
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    try {
+      // Create FormData
+      const formData = new FormData()
 
-    // Simulate LLM result
-    const mockResult: LLMResult = {
-      subject: "Payment Notice - Invoice #12345",
-      sender: "ABC Company",
-      content:
-        "Dear Customer,\n\nThis is a payment notice for invoice #12345. The total amount due is $500.00. Please make payment by December 31, 2024.\n\nThank you for your business.",
-      letterCategory: "financial-billing",
-      actionStatus: "require-action",
-      hasReminder: true,
-      actionDueDate: "2024-12-31",
-      aiSuggestion:
-        "This is a payment notice. Please make sure to pay $500.00 before December 31, 2024 to avoid late fees.",
+      // Append all image files
+      images.forEach((image) => {
+        formData.append("files", image.file)
+      })
+
+      // Append translation options
+      formData.append("include_translation", includeTranslation.toString())
+      if (includeTranslation && translationLanguage) {
+        formData.append("translation_language", translationLanguage)
+      }
+
+      // Get JWT token from localStorage or your auth provider
+      const token = TokenStorage.getToken() // Adjust based on your auth implementation
+      // Call the API
+      const response = await fetch(`${API_BASE_URL}/letters/process-images`, {
+        method: "POST",
+        headers: {
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        body: formData,
+      })
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ detail: "Unknown error" }))
+        throw new Error(errorData.detail || `HTTP error! status: ${response.status}`)
+      }
+
+      const result: ImageProcessResponse = await response.json()
+
+      setApiResponse(result)
+      setPreviewModalOpen(true)
+
+      toast({
+        title: "Processing Complete",
+        description: "Letter has been analyzed successfully.",
+      })
+    } catch (error) {
+      console.error("Upload error:", error)
+      toast({
+        title: "Upload Failed",
+        description: error instanceof Error ? error.message : "Failed to process images. Please try again.",
+        variant: "destructive",
+      })
+      setUploading(false)
+    } finally {
+      setUploading(false)
     }
-
-    setLLMResult(mockResult)
-    setUploading(false)
-    setPreviewModalOpen(true)
   }
 
   const handleConfirmCreate = () => {
-    if (!llmResult) return
+    if (!apiResponse) return
 
     const newLetter: Email = {
-      id: `letter-${Date.now()}`,
-      subject: llmResult.subject,
+      id: apiResponse.letter_id,
+      subject: apiResponse.subject,
       sender: {
-        name: llmResult.sender,
-        email: `${llmResult.sender.toLowerCase().replace(/\s+/g, "")}@example.com`,
+        name: apiResponse.sender,
+        email: `${apiResponse.sender.toLowerCase().replace(/\s+/g, "")}@example.com`,
       },
       recipients: [],
-      content: llmResult.content,
+      content: apiResponse.content,
       date: new Date().toISOString(),
       read: false,
       flagged: false,
@@ -133,17 +181,13 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
       archived: false,
       deleted: false,
       account: "main",
-      letterCategory: llmResult.letterCategory,
-      actionStatus: llmResult.actionStatus,
-      hasReminder: llmResult.hasReminder,
-      actionDueDate: llmResult.actionDueDate,
+      letterCategory: apiResponse.letterCategory,
+      actionStatus: apiResponse.actionStatus,
+      hasReminder: apiResponse.hasReminder,
+      actionDueDate: apiResponse.actionDueDate,
       recordCreatedAt: new Date().toISOString(),
-      originalImages: images.map((img) => img.preview),
-      aiSuggestion: llmResult.aiSuggestion,
-      translatedContent:
-        includeTranslation && translationLanguage
-          ? { [translationLanguage]: `[Translated to ${translationLanguage}]\n\n${llmResult.content}` }
-          : undefined,
+      originalImages: apiResponse.originalImages,
+      aiSuggestion: apiResponse.aiSuggestion,
     }
 
     onCreateLetter(newLetter)
@@ -151,7 +195,7 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
     // Clean up
     images.forEach((img) => URL.revokeObjectURL(img.preview))
     setImages([])
-    setLLMResult(null)
+    setApiResponse(null)
     setPreviewModalOpen(false)
     setIncludeTranslation(false)
     setTranslationLanguage("")
@@ -164,7 +208,7 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
     onClose()
   }
 
-  const categoryDisplay = llmResult ? getCategoryDisplay(llmResult.letterCategory) : null
+  const categoryDisplay = apiResponse ? getCategoryDisplay(apiResponse.letterCategory) : null
 
   return (
     <div className="h-full flex flex-col bg-background">
@@ -177,6 +221,41 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
 
       <ScrollArea className="flex-1 p-4 md:p-6">
         <div className="max-w-2xl mx-auto space-y-6">
+          {/* Translation Options - Show before upload */}
+          <div className="border rounded-lg p-4 space-y-3">
+            <div className="flex items-center space-x-2">
+              <Checkbox
+                id="include-translation-upload"
+                checked={includeTranslation}
+                onCheckedChange={(checked) => setIncludeTranslation(checked as boolean)}
+              />
+              <Label htmlFor="include-translation-upload" className="cursor-pointer">
+                Include translation
+              </Label>
+            </div>
+
+            {includeTranslation && (
+              <div>
+                <Label>Translation Language</Label>
+                <Select value={translationLanguage} onValueChange={setTranslationLanguage}>
+                  <SelectTrigger className="mt-1">
+                    <SelectValue placeholder="Choose a language" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="Chinese (Simplified)">Chinese (Simplified)</SelectItem>
+                    <SelectItem value="Chinese (Traditional)">Chinese (Traditional)</SelectItem>
+                    <SelectItem value="Spanish">Spanish</SelectItem>
+                    <SelectItem value="French">French</SelectItem>
+                    <SelectItem value="German">German</SelectItem>
+                    <SelectItem value="Japanese">Japanese</SelectItem>
+                    <SelectItem value="Korean">Korean</SelectItem>
+                    <SelectItem value="English">English</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+          </div>
+
           <div
             className="border-2 border-dashed border-border rounded-lg p-8 md:p-12 text-center cursor-pointer hover:border-primary/50 transition-colors"
             onClick={() => fileInputRef.current?.click()}
@@ -231,7 +310,10 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
         <Button variant="outline" onClick={onClose}>
           Cancel
         </Button>
-        <Button onClick={handleUpload} disabled={images.length === 0 || uploading}>
+        <Button
+          onClick={handleUpload}
+          disabled={images.length === 0 || uploading || (includeTranslation && !translationLanguage)}
+        >
           <Upload className="h-4 w-4 mr-2" />
           {uploading ? "Processing..." : `Upload ${images.length} Image${images.length !== 1 ? "s" : ""}`}
         </Button>
@@ -242,16 +324,21 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
           <DialogHeader>
             <DialogTitle>Preview Letter Information</DialogTitle>
           </DialogHeader>
-          {llmResult && (
+          {apiResponse && (
             <div className="space-y-4">
               <div>
+                <Label>Letter ID</Label>
+                <Input value={apiResponse.letter_id} readOnly className="mt-1 font-mono text-sm" />
+              </div>
+
+              <div>
                 <Label>Subject</Label>
-                <Input value={llmResult.subject} readOnly className="mt-1" />
+                <Input value={apiResponse.subject} readOnly className="mt-1" />
               </div>
 
               <div>
                 <Label>Sender</Label>
-                <Input value={llmResult.sender} readOnly className="mt-1" />
+                <Input value={apiResponse.sender} readOnly className="mt-1" />
               </div>
 
               <div>
@@ -271,16 +358,16 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
                   <Badge
                     variant="outline"
                     className={
-                      llmResult.actionStatus === "require-action"
+                      apiResponse.actionStatus === "require-action"
                         ? "bg-red-100 text-red-700"
-                        : llmResult.actionStatus === "action-done"
+                        : apiResponse.actionStatus === "action-done"
                           ? "bg-green-100 text-green-700"
                           : "bg-gray-100 text-gray-700"
                     }
                   >
-                    {llmResult.actionStatus === "require-action"
+                    {apiResponse.actionStatus === "require-action"
                       ? "Require Action"
-                      : llmResult.actionStatus === "action-done"
+                      : apiResponse.actionStatus === "action-done"
                         ? "Action Done"
                         : "No Action Needed"}
                   </Badge>
@@ -290,70 +377,50 @@ export default function UploadLetters({ onClose, onCreateLetter }: UploadLetters
               <div>
                 <Label>Reminder</Label>
                 <div className="mt-1">
-                  <Badge variant="outline" className={llmResult.hasReminder ? "bg-yellow-100 text-yellow-700" : ""}>
-                    {llmResult.hasReminder ? "Active" : "None"}
+                  <Badge variant="outline" className={apiResponse.hasReminder ? "bg-yellow-100 text-yellow-700" : ""}>
+                    {apiResponse.hasReminder ? "Active" : "None"}
                   </Badge>
                 </div>
               </div>
 
-              {llmResult.actionDueDate && (
+              {apiResponse.actionDueDate && (
                 <div>
                   <Label>Action Due Date</Label>
-                  <Input value={llmResult.actionDueDate} readOnly className="mt-1" />
+                  <Input value={apiResponse.actionDueDate} readOnly className="mt-1" />
                 </div>
               )}
 
               <div>
-                <Label>Content</Label>
-                <Textarea value={llmResult.content} readOnly className="mt-1 min-h-[120px]" />
+                <Label>Content (OCR Extracted)</Label>
+                <Textarea value={apiResponse.content} readOnly className="mt-1 min-h-[120px]" />
               </div>
 
               <div>
                 <Label>AI Suggestion</Label>
-                <Textarea value={llmResult.aiSuggestion} readOnly className="mt-1 min-h-[80px]" />
+                <Textarea value={apiResponse.aiSuggestion} readOnly className="mt-1 min-h-[80px]" />
               </div>
 
-              <div className="border-t pt-4">
-                <div className="flex items-center space-x-2 mb-3">
-                  <Checkbox
-                    id="include-translation"
-                    checked={includeTranslation}
-                    onCheckedChange={(checked) => setIncludeTranslation(checked as boolean)}
-                  />
-                  <Label htmlFor="include-translation" className="cursor-pointer">
-                    Include translation
-                  </Label>
-                </div>
-
-                {includeTranslation && (
-                  <div>
-                    <Label>Translation Language</Label>
-                    <Select value={translationLanguage} onValueChange={setTranslationLanguage}>
-                      <SelectTrigger className="mt-1">
-                        <SelectValue placeholder="Choose a language" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Chinese (Simplified)">Chinese (Simplified)</SelectItem>
-                        <SelectItem value="Chinese (Traditional)">Chinese (Traditional)</SelectItem>
-                        <SelectItem value="Spanish">Spanish</SelectItem>
-                        <SelectItem value="French">French</SelectItem>
-                        <SelectItem value="German">German</SelectItem>
-                        <SelectItem value="Japanese">Japanese</SelectItem>
-                        <SelectItem value="Korean">Korean</SelectItem>
-                        <SelectItem value="English">English</SelectItem>
-                      </SelectContent>
-                    </Select>
+              {apiResponse.originalImages.length > 0 && (
+                <div>
+                  <Label>Uploaded Images</Label>
+                  <div className="mt-2 grid grid-cols-3 gap-2">
+                    {apiResponse.originalImages.map((url, index) => (
+                      <img
+                        key={index}
+                        src={url}
+                        alt={`Uploaded ${index + 1}`}
+                        className="w-full h-24 object-cover rounded border"
+                      />
+                    ))}
                   </div>
-                )}
-              </div>
+                </div>
+              )}
 
-              <div className="flex justify-end gap-2 pt-4">
+              <div className="flex justify-end gap-2 pt-4 border-t">
                 <Button variant="outline" onClick={() => setPreviewModalOpen(false)}>
                   Cancel
                 </Button>
-                <Button onClick={handleConfirmCreate} disabled={includeTranslation && !translationLanguage}>
-                  Confirm & Create
-                </Button>
+                <Button onClick={handleConfirmCreate}>Confirm & Create</Button>
               </div>
             </div>
           )}
